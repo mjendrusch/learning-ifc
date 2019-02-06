@@ -5,7 +5,19 @@ from torch.utils.data import Dataset
 from data_base import DataMode, random_split
 
 class BrightfieldStacks(Dataset):
+  """Dataset of brightfield yeast stacks for multiple strains at 41 consecutive z-positions
+    separated by 0.25 µm each, centered around the yeast focal plane.
+  """
+
   def __init__(self, transform=lambda x: x, data_mode=DataMode.VALID, split_seed=123456):
+    """Dataset of brightfield yeast stacks for multiple strains at 41 consecutive z-positions
+    separated by 0.25 µm each, centered around the yeast focal plane.
+
+    Args:
+      transform (callable): transforms to apply to datapoints.
+      data_mode (DataMode): part of split to use (one of TRAIN, VALID, TEST).
+      split_seed (int): seed to use for random split generation per class.
+    """
     super(BrightfieldStacks, self).__init__()
     self.base_data = []
     self.split_seed = split_seed
@@ -53,10 +65,24 @@ class BrightfieldStacks(Dataset):
     return len(self.split[self.data_mode])
 
 class Brightfield(BrightfieldStacks):
+  """Dataset of brightfield yeast images for multiple strains at 41 consecutive z-positions
+  separated by 0.25 µm each, centered around the yeast focal plane. Stacks are split up into
+  separate images annotated with strain and distance from focal plane.
+  """
   def __init__(self, transform=lambda x: x,
                focus_transform=lambda x: x,
                data_mode=DataMode.VALID,
                split_seed=123456):
+    """Dataset of brightfield yeast images for multiple strains at 41 consecutive z-positions
+    separated by 0.25 µm each, centered around the yeast focal plane. Stacks are split up into
+    separate images annotated with strain and distance from focal plane.
+
+    Args:
+      transform (callable): transforms to apply to datapoints.
+      focus_transform (callable): transforms to apply to distance to focal plane.
+      data_mode (DataMode): part of split to use (one of TRAIN, VALID, TEST).
+      split_seed (int): seed to use for random split generation per class.
+    """
     super(Brightfield, self).__init__(
       transform=transform,
       data_mode=data_mode,
@@ -80,6 +106,15 @@ class Brightfield(BrightfieldStacks):
 
 class BrightfieldDevice(Dataset):
   def __init__(self, ratio, cells=100, transform=lambda x: x, seed=123456):
+    """Dataset simulating a single run of imaging flow cytometry by remixing
+    yeast frames from real imaging flow cytometry runs.
+
+    Args:
+      ratio (tuple): percentages of each yeast strain in the IFC sequence.
+      cells (int): number of frames containing cells in the IFC sequence.
+      transform (callable): transforms to apply to datapoints.
+      seed (int): seed to use for random IFC run remixing.
+    """
     super(BrightfieldDevice, self).__init__()
     self.transform = transform
     self.ratio = ratio
@@ -92,7 +127,6 @@ class BrightfieldDevice(Dataset):
     self._sample_run()
 
   def _load_data(self):
-    result = []
     path = os.path.dirname(os.path.realpath(__file__))
     path = path.split("/")[:-1].join("/") + "runs/brightfield/"
     strain_result = {

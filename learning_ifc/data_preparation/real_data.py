@@ -5,8 +5,7 @@ import numpy as np
 from skimage.external.tifffile import TiffWriter
 import av
 
-from learning_ifc.segmentation import MANAArray
-from learning_ifc.yeast_frames import is_yeast_frame, crop_yeast
+from learning_ifc.data_preparation.yeast_frames import is_yeast_frame, crop_yeast
 
 path = sys.argv[1]
 

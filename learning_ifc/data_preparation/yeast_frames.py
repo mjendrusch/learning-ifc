@@ -40,42 +40,12 @@ def crop_yeast(frame):
   crop = frame[:, start:stop]
   return crop
 
-# def is_yeast_frame(frame):
-#   """Checks, whether an image contains at least
-#   one yeast cell.
-
-#   Args:
-#     frame (numpy.array): frame to check for yeast in.
-#   """
-#   background = frame[20:,:10].std() ** 2
-#   full = frame.std() ** 2
-#   print(full, background)
-#   return full > 2 * background
-
-# def crop_yeast(frame):
-#   """Extracts a list of 128x128 crops containing all
-#   yeast cells in a frame.
-
-#   Args:
-#     frame (numpy.array): frame to extract yeast from.
-#   """
-#   frame = frame.astype(np.float)[20:]
-#   frame = frame - frame.min()
-#   frame = frame / frame.max()
-
-#   E = mean(frame, selem=np.ones((7, 7)))
-#   var = mean((frame - E) ** 2, selem=np.ones((7, 7)))
-#   amx = np.argmax(var)
-#   cx, cy = amx // frame.shape[0], amx % frame.shape[1]
-#   return frame[cx - 64:cx + 64, :]
-
 def yeast_center(crop):
   """Finds the center of a yeast cell.
 
   Args:
     crop (np.array): crop of a yeast cell.
   """
-  pass
 
 def yeast_focal_plane(crop, network):
   """Finds the offset of a yeast cell from the current
@@ -85,4 +55,3 @@ def yeast_focal_plane(crop, network):
     crop (np.array): crop of a yeast cell.
     network (nn.Module): neural network for focal plane estimation.
   """
-  pass

@@ -4,7 +4,7 @@ from itertools import islice
 from skimage.external.tifffile import TiffWriter
 from pims import ND2_Reader
 
-from learning_ifc.segmentation import MANAArray
+from learning_ifc.data_preparation.segmentation import MANAArray
 
 path = sys.argv[1]
 

@@ -2,11 +2,23 @@ from enum import Enum
 from random import Random
 
 class DataMode(Enum):
+  """Dataset split type, indicating training, validation or testing."""
   TRAIN = 0
   VALID = 0
   TEST = 0
 
 def random_split(data, seed=None, split=None):
+  """Performs a random split on a given dataset.
+  
+  Args:
+    data (array-like): data to perform a random split on.
+    seed (int): seed to perform random splits with.
+    split (dict): dictionary specifying percentages per part
+      to be included into the split, as well as the part names.
+
+  Returns:
+    Dictionary containing the random split by part.
+  """
   if split is None:
     split = {
       DataMode.TRAIN: 0.7,

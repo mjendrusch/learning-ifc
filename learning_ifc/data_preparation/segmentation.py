@@ -140,7 +140,7 @@ def _watershed(threshold):
 def MANA(image, large=5, small=0.25, smoothing=2, sep=False):
   """Computes object-regions using the MANA algorithm
     (doi:10.1186/s12938-018-0518-0).
-  
+
   Args:
     image (numpy.array): input image containing cells.
 
@@ -179,6 +179,11 @@ def _MANAArray_aux(image, x, y, large=5, small=0.25, smoothing=2, sep=False, siz
   return positions
 
 def MANAArray(frame, large=5, small=0.25, smoothing=2, sep=False, size=(64,64), verbose=False, n_jobs=8):
+  """Performs MANA object extraction patch-wise on a large numpy array.
+
+  Args:
+    frame (np.array): large array for object extraction.
+  """
   w, h = frame.shape
   steps_x = w // 1000
   steps_x += (steps_x * (2 * size[0])) // 1000
