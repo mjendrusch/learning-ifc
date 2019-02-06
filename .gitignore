@@ -1,0 +1,5 @@
+*.tar.gz
+*.tiff
+*.tif
+*.pyc
+.vscode

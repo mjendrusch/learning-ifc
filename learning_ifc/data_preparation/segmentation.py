@@ -11,7 +11,6 @@ from scipy.interpolate import interp1d
 from matplotlib import pyplot as plt
 from joblib import delayed, Parallel
 from openslide import OpenSlide
-import os
 from tqdm import tqdm
 
 def _compute_initial_thresholds(image):

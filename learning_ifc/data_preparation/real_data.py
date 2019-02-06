@@ -13,8 +13,6 @@ path = sys.argv[1]
 container = av.open(path)
 stream = container.streams.video[0]
 
-from matplotlib import pyplot as plt
-
 for frame in container.decode(stream):
   frame = np.array(frame.to_image()).transpose(2, 0, 1)[0, :, :]
   if is_yeast_frame(frame):
