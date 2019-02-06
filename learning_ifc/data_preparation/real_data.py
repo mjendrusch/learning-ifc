@@ -1,3 +1,5 @@
+"""Preprocesses and extracts frames containing cells from IFC runs."""
+
 import sys
 from itertools import islice
 

@@ -1,3 +1,7 @@
+"""Preprocesses and segments training slides into 41x128x128 stacks
+with 1000 cells per class.
+"""
+
 import sys
 from itertools import islice
 
