@@ -126,7 +126,7 @@ class MLP(nn.Module):
   def forward(self, input):
     out = func.relu(self.preprocessor(input.squeeze()))
     for module in self.linear:
-      out = self.relu(module(out))
+      out = func.relu(module(out))
     out = self.final_activation(self.postprocessor(out))
     return out
 

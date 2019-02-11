@@ -84,6 +84,8 @@ def train(net, opt):
     Elastic(alpha=(0, 10), sigma=50),
     Perturb(std=(0.0, 0.5))
   ]), data_mode=DataMode.TRAIN)
+  if opt.task == 0:
+    data.focus_only = True
   valid_data = copy(data)
   valid_data.transform = Normalize()
   valid_data.data_mode = DataMode.VALID

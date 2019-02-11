@@ -105,6 +105,7 @@ class Brightfield(BrightfieldStacks):
       split_seed=split_seed
     )
     self.focus_transform = focus_transform
+    self.focus_only = False
     self._unstack_data()
 
   def _unstack_data(self):
@@ -133,7 +134,10 @@ class Brightfield(BrightfieldStacks):
       [self.focus_transform((idx % 41 - 20) * 0.05)],
       dtype=torch.float32
     )
-    return data, strain, focus
+    result = (data, strain, focus)
+    if self.focus_only:
+      result = (data, focus)
+    return result
 
 class BrightfieldDevice(Dataset):
   def __init__(self, ratio, cells=100, transform=lambda x: x, seed=123456):
