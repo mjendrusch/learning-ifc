@@ -24,7 +24,7 @@ class BrightfieldStacks(Dataset):
     self.split_seed = split_seed
     self.data_mode = data_mode
     self.transform = transform
-    self.classes = ("cerevisiae", "ludwigii", "pombe")
+    self.classes = np.array(("cerevisiae", "ludwigii", "pombe"))
     self.class_count = 1000
     base_data = self._load_data()
     split = {}

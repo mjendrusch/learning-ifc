@@ -39,7 +39,7 @@ def create_network(opt):
     )
   elif classifier_split[0] == "mlp":
     classifier = MLP(
-      int(net_split[4]), int(net_split[1]), *map(int, classifier_split[1])
+      int(net_split[4]), int(net_split[1]), *map(int, classifier_split[1:])
     )
   elif classifier_split[0] == "none":
     classifier = lambda x: x
@@ -51,7 +51,7 @@ def create_network(opt):
     )
   elif regressor_split[0] == "mlp":
     regressor = MLP(
-      int(net_split[4]), int(net_split[1]), *map(int, regressor_split[1])
+      int(net_split[4]), int(net_split[1]), *map(int, regressor_split[1:])
     )
   elif regressor_split[0] == "none":
     regressor = lambda x: x
