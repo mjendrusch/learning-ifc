@@ -56,7 +56,12 @@ def create_network(opt):
   elif regressor_split[0] == "none":
     regressor = lambda x: x
 
-  result = Multitask(network, [classifier]) if opt.task == 1 else Multitask(network, [classifier, regressor])
+  if opt.task == 0:
+    result = Multitask(network, [regressor])
+  elif opt.task == 1:
+    result = Multitask(network, [classifier])
+  else:
+    Multitask(network, [classifier, regressor])
 
   return result
 
@@ -74,21 +79,27 @@ def train(net, opt):
     Normalize(),
     Rotation4(),
     Elastic(alpha=(0, 10), sigma=50),
-    Perturb(std=0.2)
+    Perturb(std=(0.0, 0.5))
   ]), data_mode=DataMode.TRAIN)
   valid_data = copy(data)
+  valid_data.transform = Normalize()
   valid_data.data_mode = DataMode.VALID
-  losses = [
-    nn.CrossEntropyLoss(),
-    nn.MSELoss()
-  ] if opt.task == 2 else [
-    nn.CrossEntropyLoss()
-  ]
-  training = SupervisedTraining(
-    net, data, valid_data, [
+  if opt.task == 0:
+    losses = [
+      nn.MSELoss()
+    ]
+  elif opt.task == 1:
+    losses = [
+      nn.CrossEntropyLoss()
+    ]
+  else:
+    losses = [
       nn.CrossEntropyLoss(),
       nn.MSELoss()
-    ], network_name=net_name(opt),
+    ]
+  training = SupervisedTraining(
+    net, data, valid_data, losses,
+    network_name=net_name(opt),
     device="cuda:0",
     max_epochs=20,
     valid_callback=show_images
