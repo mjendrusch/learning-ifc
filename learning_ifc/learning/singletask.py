@@ -61,7 +61,7 @@ def create_network(opt):
   elif opt.task == 1:
     result = Multitask(network, [classifier])
   else:
-    Multitask(network, [classifier, regressor])
+    result = Multitask(network, [classifier, regressor])
 
   return result
 
@@ -73,8 +73,11 @@ def show_images(training, inputs, labels):
   img = img - img.min()
   img = img / img.max()
   training.writer.add_image("example image", img, training.step_id)
+  del img
 
 def train(net, opt):
+  print("Start training ...")
+  print("Loading data ...")
   data = Brightfield(transform=Compose([
     Normalize(),
     Rotation4(),
@@ -84,21 +87,30 @@ def train(net, opt):
   valid_data = copy(data)
   valid_data.transform = Normalize()
   valid_data.data_mode = DataMode.VALID
+  print("Done loading data.")
+  print("Setting up objectives ...")
+  mse = nn.MSELoss()
+  ce = nn.CrossEntropyLoss()
   if opt.task == 0:
     losses = [
-      nn.MSELoss()
+      mse
     ]
   elif opt.task == 1:
     losses = [
-      nn.CrossEntropyLoss()
+      ce
     ]
   else:
     losses = [
-      nn.CrossEntropyLoss(),
-      nn.MSELoss()
+      ce,
+      mse
     ]
+  print("Done setting up objectives.")
+  print("Starting optimization ...")
   training = SupervisedTraining(
-    net, data, valid_data, losses,
+    net,
+    data,
+    valid_data,
+    losses,
     network_name=net_name(opt),
     device="cuda:0",
     max_epochs=20,
@@ -107,7 +119,11 @@ def train(net, opt):
   return training.train()
 
 if __name__ == "__main__":
+  print("Parsing arguments ...")
   opt = parse_args()
+  print("Arguments parsed.")
+  print("Creating network ...")
   net = create_network(opt)
+  print("Network created.")
   train(net, opt)
   netwrite(net, net_name(opt) + f"-network-final.torch")

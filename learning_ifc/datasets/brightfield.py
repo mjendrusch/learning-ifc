@@ -21,22 +21,24 @@ class BrightfieldStacks(Dataset):
       split_seed (int): seed to use for random split generation per class.
     """
     super(BrightfieldStacks, self).__init__()
-    self.base_data = []
     self.split_seed = split_seed
     self.data_mode = data_mode
     self.transform = transform
     self.classes = ("cerevisiae", "ludwigii", "pombe")
     self.class_count = 1000
-    self._load_data()
-    self.split = {}
-    for idx, data_source in enumerate(self.base_data):
-      data_split = random_split(data_source, idx * self.split_seed)
+    base_data = self._load_data()
+    split = {}
+    for idx, data_source in enumerate(base_data):
+      data_split = random_split(data_source, idx * split_seed)
       for name in data_split:
-        self.split[name] = (
+        split[name] = (
           data_split[name]
-          if name not in self.split
-          else torch.cat((self.split[name], data_split[name]), dim=0)
+          if name not in split
+          else torch.cat((split[name], data_split[name]), dim=0)
         )
+    self.train = split[DataMode.TRAIN]
+    self.test = split[DataMode.TEST]
+    self.valid = split[DataMode.VALID]
 
   def _load_data(self):
     result = []
@@ -55,16 +57,28 @@ class BrightfieldStacks(Dataset):
           strain_result.append(tensor)
       strain_result = torch.cat(strain_result, dim=0)
       result.append(strain_result)
-    self.base_data = result
+    return result
 
   def __getitem__(self, idx):
+    if self.data_mode == DataMode.TRAIN:
+      result = self.train
+    elif self.data_mode == DataMode.TEST:
+      result = self.test
+    elif self.data_mode == DataMode.VALID:
+      result = self.valid
     return (
-      self.transform(self.split[self.data_mode][idx]),
-      idx // (len(self.split[self.data_mode]) // len(self.classes))
+      self.transform(result[idx]),
+      idx // (len(result) // len(self.classes))
     )
 
   def __len__(self):
-    return self.split[self.data_mode].size(0)
+    if self.data_mode == DataMode.TRAIN:
+      result = self.train
+    elif self.data_mode == DataMode.TEST:
+      result = self.test
+    elif self.data_mode == DataMode.VALID:
+      result = self.valid
+    return result.size(0)
 
 class Brightfield(BrightfieldStacks):
   """Dataset of brightfield yeast images for multiple strains at 41 consecutive z-positions
@@ -94,18 +108,29 @@ class Brightfield(BrightfieldStacks):
     self._unstack_data()
 
   def _unstack_data(self):
-    for name in self.split:
-      self.split[name] = self.split[name].reshape(
-        self.split[name].size(0) * self.split[name].size(1),
-        1,
-        self.split[name].size(2),
-        self.split[name].size(3)
-      )
+    self.train = self.train.reshape(
+      self.train.size(0) * self.train.size(1),
+      1,
+      self.train.size(2),
+      self.train.size(3)
+    )
+    self.test = self.test.reshape(
+      self.test.size(0) * self.test.size(1),
+      1,
+      self.test.size(2),
+      self.test.size(3)
+    )
+    self.valid = self.valid.reshape(
+      self.valid.size(0) * self.valid.size(1),
+      1,
+      self.valid.size(2),
+      self.valid.size(3)
+    )
 
   def __getitem__(self, idx):
     data, strain = super(Brightfield, self).__getitem__(idx)
     focus = torch.tensor(
-      [self.focus_transform((idx % 41 - 20) * 0.25)],
+      [self.focus_transform((idx % 41 - 20) * 0.05)],
       dtype=torch.float32
     )
     return data, strain, focus
