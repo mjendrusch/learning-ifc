@@ -63,20 +63,35 @@ def create_network(opt):
 def net_name(opt):
   return f"{opt.net}-{opt.classifier}-{opt.regressor}-{opt.task}"
 
+def show_images(training, inputs, labels):
+  img = inputs[0]
+  img = img - img.min()
+  img = img / img.max()
+  training.writer.add_image("example image", img, training.step_id)
+
 def train(net, opt):
   data = Brightfield(transform=Compose([
     Normalize(),
     Rotation4(),
-    Perturb()
+    Elastic(alpha=(0, 10), sigma=50),
+    Perturb(std=0.2)
   ]), data_mode=DataMode.TRAIN)
   valid_data = copy(data)
   valid_data.data_mode = DataMode.VALID
+  losses = [
+    nn.CrossEntropyLoss(),
+    nn.MSELoss()
+  ] if opt.task == 2 else [
+    nn.CrossEntropyLoss()
+  ]
   training = SupervisedTraining(
     net, data, valid_data, [
       nn.CrossEntropyLoss(),
       nn.MSELoss()
     ], network_name=net_name(opt),
-    device="cuda:0"
+    device="cuda:0",
+    max_epochs=20,
+    valid_callback=show_images
   )
   return training.train()
 
