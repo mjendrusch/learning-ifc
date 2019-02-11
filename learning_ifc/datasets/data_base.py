@@ -4,12 +4,12 @@ from random import Random
 class DataMode(Enum):
   """Dataset split type, indicating training, validation or testing."""
   TRAIN = 0
-  VALID = 0
-  TEST = 0
+  VALID = 1
+  TEST = 2
 
 def random_split(data, seed=None, split=None):
   """Performs a random split on a given dataset.
-  
+
   Args:
     data (array-like): data to perform a random split on.
     seed (int): seed to perform random splits with.
@@ -31,8 +31,8 @@ def random_split(data, seed=None, split=None):
   result = {}
   start = 0
   for piece in split:
-    offset = int(len(data) * split)
-    stop = start + int(len(data) * split)
+    offset = int(data.size(0) * split[piece])
+    stop = start + offset
     result[piece] = data[start:stop]
     start += offset
   return result

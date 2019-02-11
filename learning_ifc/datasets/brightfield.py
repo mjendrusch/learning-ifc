@@ -1,8 +1,10 @@
 import os
+import numpy as np
 import pims
+from PIL import Image, ImageSequence
 import torch
 from torch.utils.data import Dataset
-from data_base import DataMode, random_split
+from learning_ifc.datasets.data_base import DataMode, random_split
 
 class BrightfieldStacks(Dataset):
   """Dataset of brightfield yeast stacks for multiple strains at 41 consecutive z-positions
@@ -23,7 +25,7 @@ class BrightfieldStacks(Dataset):
     self.split_seed = split_seed
     self.data_mode = data_mode
     self.transform = transform
-    self.classes = ("Cerevisiae", "Ludwigii", "Pombe")
+    self.classes = ("cerevisiae", "ludwigii", "pombe")
     self.class_count = 1000
     self._load_data()
     self.split = {}
@@ -39,16 +41,16 @@ class BrightfieldStacks(Dataset):
   def _load_data(self):
     result = []
     path = os.path.dirname(os.path.realpath(__file__))
-    path = path.split("/")[:-1].join("/") + "stacks/brightfield/"
+    path = "/".join(path.split("/")[:-1]) + "/stacks/brightfield/"
     for name in self.classes:
       strain_result = []
       stack_path = f"{path}/{name}/"
       for root, _, files in os.walk(stack_path):
         for filename in files:
           frames = []
-          with pims.open(f"{root}/{filename}") as stack:
-            for frame in stack:
-              frames.append(torch.Tensor(frame).unsqueeze(0))
+          with Image.open(f"{root}/{filename}") as stack:
+            for frame in ImageSequence.Iterator(stack):
+              frames.append(torch.Tensor(np.array(frame).astype(float)).unsqueeze(0))
           tensor = torch.cat(frames, dim=0).unsqueeze(0)
           strain_result.append(tensor)
       strain_result = torch.cat(strain_result, dim=0)
@@ -62,7 +64,7 @@ class BrightfieldStacks(Dataset):
     )
 
   def __len__(self):
-    return len(self.split[self.data_mode])
+    return self.split[self.data_mode].size(0)
 
 class Brightfield(BrightfieldStacks):
   """Dataset of brightfield yeast images for multiple strains at 41 consecutive z-positions
@@ -95,13 +97,17 @@ class Brightfield(BrightfieldStacks):
     for name in self.split:
       self.split[name] = self.split[name].reshape(
         self.split[name].size(0) * self.split[name].size(1),
+        1,
         self.split[name].size(2),
         self.split[name].size(3)
       )
 
   def __getitem__(self, idx):
     data, strain = super(Brightfield, self).__getitem__(idx)
-    focus = self.focus_transform((idx % 41 - 20) * 0.25)
+    focus = torch.tensor(
+      [self.focus_transform((idx % 41 - 20) * 0.25)],
+      dtype=torch.float32
+    )
     return data, strain, focus
 
 class BrightfieldDevice(Dataset):
@@ -128,7 +134,7 @@ class BrightfieldDevice(Dataset):
 
   def _load_data(self):
     path = os.path.dirname(os.path.realpath(__file__))
-    path = path.split("/")[:-1].join("/") + "runs/brightfield/"
+    path = "/".join(path.split("/")[:-1]) + "/runs/brightfield/"
     strain_result = {
       "cerevisiae": [],
       "ludwigii": [],

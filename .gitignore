@@ -3,3 +3,5 @@
 *.tif
 *.pyc
 .vscode
+*.torch
+compact:*
