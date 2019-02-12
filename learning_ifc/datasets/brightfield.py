@@ -14,7 +14,7 @@ def _focus(data):
     in_focus = variances.argmin()
     # print(in_focus)
     focus = torch.Tensor([
-      (idx - int(in_focus)) * 0.05
+      (idx - 20) * 0.05
       for idx in range(stack.size(0))
     ])
     # print(focus)
