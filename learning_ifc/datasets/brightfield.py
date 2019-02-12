@@ -1,10 +1,25 @@
 import os
+import random
 import numpy as np
 import pims
 from PIL import Image, ImageSequence
 import torch
 from torch.utils.data import Dataset
 from learning_ifc.datasets.data_base import DataMode, random_split
+
+def _focus(data):
+  result = []
+  for stack in data:
+    variances = stack[:, 32:96, 32:96].contiguous().view(stack.size(0), -1).std(dim=1)
+    in_focus = variances.argmin()
+    # print(in_focus)
+    focus = torch.Tensor([
+      (idx - int(in_focus)) * 0.05
+      for idx in range(stack.size(0))
+    ])
+    # print(focus)
+    result.append(focus.unsqueeze(0))
+  return torch.cat(result, dim=0)
 
 class BrightfieldStacks(Dataset):
   """Dataset of brightfield yeast stacks for multiple strains at 41 consecutive z-positions
@@ -37,8 +52,11 @@ class BrightfieldStacks(Dataset):
           else torch.cat((split[name], data_split[name]), dim=0)
         )
     self.train = split[DataMode.TRAIN]
+    self.train_focus = _focus(self.train)
     self.test = split[DataMode.TEST]
+    self.test_focus = _focus(self.train)
     self.valid = split[DataMode.VALID]
+    self.valid_focus = _focus(self.valid)
 
   def _load_data(self):
     result = []
@@ -52,11 +70,20 @@ class BrightfieldStacks(Dataset):
           frames = []
           with Image.open(f"{root}/{filename}") as stack:
             for frame in ImageSequence.Iterator(stack):
-              frames.append(torch.Tensor(np.array(frame).astype(float)).unsqueeze(0))
+              frame_tensor = torch.Tensor(np.array(frame).astype(float)).unsqueeze(0)
+              frames.append(frame_tensor)
           tensor = torch.cat(frames, dim=0).unsqueeze(0)
-          strain_result.append(tensor)
-      strain_result = torch.cat(strain_result, dim=0)
+          am = tensor.view(tensor.size(1), -1).std(dim=1).argmin()
+          if 1 <= am < 40:
+            strain_result.append(tensor)
+      # strain_result = torch.cat(strain_result, dim=0)
+      print(len(strain_result))
       result.append(strain_result)
+    minlen = min(map(len, result))
+    for idx, elem in enumerate(result):
+      if len(elem) > minlen:
+        result[idx] = random.sample(elem, k=minlen)
+      result[idx] = torch.cat(result[idx], dim=0)
     return result
 
   def __getitem__(self, idx):
@@ -70,6 +97,15 @@ class BrightfieldStacks(Dataset):
       self.transform(result[idx]),
       idx // (len(result) // len(self.classes))
     )
+
+  def getfocus(self, idx):
+    if self.data_mode == DataMode.TRAIN:
+      result = self.train_focus
+    elif self.data_mode == DataMode.TEST:
+      result = self.test_focus
+    elif self.data_mode == DataMode.VALID:
+      result = self.valid_focus
+    return result[idx]
 
   def __len__(self):
     if self.data_mode == DataMode.TRAIN:
@@ -127,13 +163,19 @@ class Brightfield(BrightfieldStacks):
       self.valid.size(2),
       self.valid.size(3)
     )
+    self.train_focus = self.train_focus.reshape(
+      self.train_focus.size(0) * self.train_focus.size(1), 1
+    )
+    self.test_focus = self.test_focus.reshape(
+      self.test_focus.size(0) * self.test_focus.size(1), 1
+    )
+    self.valid_focus = self.valid_focus.reshape(
+      self.valid_focus.size(0) * self.valid_focus.size(1), 1
+    )
 
   def __getitem__(self, idx):
     data, strain = super(Brightfield, self).__getitem__(idx)
-    focus = torch.tensor(
-      [self.focus_transform((idx % 41 - 20) * 0.05)],
-      dtype=torch.float32
-    )
+    focus = self.getfocus(idx)
     result = (data, strain, focus)
     if self.focus_only:
       result = (data, focus)

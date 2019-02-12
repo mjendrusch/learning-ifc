@@ -1,17 +1,22 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as func
 from torchsupport.modules.separable import DepthWiseSeparableConv2d
 
 class CompactModule(nn.Module):
   def __init__(self, in_channels, out_channels,
-               activation=func.relu, batch_norm=True):
+               activation=func.relu, batch_norm=True,
+               residual=True):
     super(CompactModule, self).__init__()
+    self.in_channels = in_channels
+    self.out_channels = out_channels
     self.activation = activation
     self.layers = nn.ModuleList([
       DepthWiseSeparableConv2d(in_channels, out_channels, 3, padding=1),
-      nn.Conv2d(out_channels, in_channels, 1, padding=1),
+      nn.Conv2d(out_channels, in_channels, 1),
       DepthWiseSeparableConv2d(in_channels, out_channels, 3, padding=1)
     ])
+    self.residual = residual
     self.pool = nn.MaxPool2d(2)
 
     self.batch_norm = batch_norm
@@ -28,6 +33,8 @@ class CompactModule(nn.Module):
       out = module(out)
       out = self.bn[idx](out) if self.batch_norm else out
       out = self.activation(out)
+    if self.in_channels == self.out_channels:
+      return torch.cat([self.pool(out), self.pool(x)], dim=1)
     return self.pool(out)
 
 class FullCompactModule(CompactModule):
@@ -55,7 +62,7 @@ class Compact(nn.Module):
     self.layers = nn.ModuleList([
       CompactModule(
         2 ** (filters + idx),
-        2 ** (filters + idx + 1),
+        2 ** (filters + idx),
         activation=activation,
         batch_norm=batch_norm
       )
