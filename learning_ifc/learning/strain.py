@@ -16,8 +16,8 @@ from torchsupport.data.io import netread, netwrite
 from torchsupport.data.transforms import Rotation4, Elastic, Compose, Shift, Zoom, Perturb, PerturbUniform, MinMax, Normalize, Affine, Translation
 from torchsupport.training.training import SupervisedTraining
 
-from learning_ifc.learning.models.compact import Compact, DenseCompact, Perceptron, MLP, Multitask
-from learning_ifc.datasets.brightfield import Brightfield, BrightfieldClass, BrightfieldDevice, BrightfieldDeviceValid, BrightfieldDeviceTrain, DataMode
+from learning_ifc.learning.models.compact import Compact, DenseCompact, Perceptron, MLP, Multitask, Siamese
+from learning_ifc.datasets.brightfield import Brightfield, BrightfieldClass, BrightfieldDevice, BrightfieldShotFocus, BrightfieldDeviceValid, DataMode
 
 from matplotlib import pyplot as plt
 
@@ -28,9 +28,9 @@ def parse_args():
   parser.add_argument("--testdevice", type=str, default=None)
   parser.add_argument("--epochs", type=int, default=50)
   parser.add_argument("--task", type=int, default=2)
-  parser.add_argument("--net", type=str, default="compact:6:1:32:2")
+  parser.add_argument("--net", type=str, default="compact:6:1:256:2")
   parser.add_argument("--classifier", type=str, default="perceptron:3")
-  parser.add_argument("--regressor", type=str, default="perceptron:41")
+  parser.add_argument("--regressor", type=str, default="perceptron:3")
   return parser.parse_args()
 
 def create_network(opt):
@@ -55,7 +55,7 @@ def create_network(opt):
   regressor_split = opt.regressor.split(":")
   if regressor_split[0] == "perceptron":
     regressor = Perceptron(
-      int(net_split[3]), int(regressor_split[1])
+      2 * int(net_split[3]), int(regressor_split[1])
     )
   elif regressor_split[0] == "mlp":
     regressor = MLP(
@@ -64,17 +64,12 @@ def create_network(opt):
   elif regressor_split[0] == "none":
     regressor = lambda x: x
 
-  if opt.task == 0:
-    result = Multitask(network, [regressor])
-  elif opt.task == 1:
-    result = Multitask(network, [classifier])
-  else:
-    result = Multitask(network, [classifier, regressor])
+  result = Siamese(network, regressor)
 
   return result
 
 def net_name(opt):
-  return f"{opt.net}-{opt.classifier}-{opt.regressor}-{opt.task}"
+  return f"{opt.net}-{opt.classifier}-{opt.regressor}-{opt.task}-strain"
 
 def show_images(training, inputs, labels):
   img = inputs[0]
@@ -89,13 +84,9 @@ def train(net, opt, data):
   print("Loading data ...")
   if opt.task == 0:
     data.focus_only = True
-  valid_data = Subset(
-    BrightfieldDeviceValid((0.2, 0.2, 0.6), transform=Compose([
-      Normalize()
-    ])),
-    list(range(100, 200)) + list(range(800, 900)) + list(range(1700, 1800))
-  )
-  # valid_data.transform = Compose([
+  valid_data = copy(data)
+  valid_data.data_mode = DataMode.VALID
+  valid_data.transform = Normalize()#Compose([
   #   MinMax(),
   #   Normalize(),
   #   Affine(
@@ -111,19 +102,11 @@ def train(net, opt, data):
   # ])
   print("Done loading data.")
   print("Setting up objectives ...")
-  mse = nn.CrossEntropyLoss()
   ce = nn.CrossEntropyLoss()
-
-  # valid_data = copy(data)
-  # valid_data.transform = Compose([
-  #   MinMax(),
-  #   Normalize()
-  # ])
-  # valid_data.data_mode = DataMode.VALID
 
   if opt.task == 0:
     losses = [
-      mse
+      ce
     ]
   elif opt.task == 1:
     losses = [
@@ -131,8 +114,7 @@ def train(net, opt, data):
     ]
   else:
     losses = [
-      ce,
-      mse
+      ce
     ]
   print("Done setting up objectives.")
   print("Starting optimization ...")
@@ -141,7 +123,7 @@ def train(net, opt, data):
     data,
     valid_data,
     losses,
-    batch_size=32,
+    batch_size=64,
     network_name=net_name(opt),
     device="cuda:0",
     max_epochs=500,
@@ -212,38 +194,15 @@ if __name__ == "__main__":
     cer, lud, pom = map(float, opt.testdevice.split(":"))
     testdevice(net, cer=cer, lud=lud, pom=pom)
   else:
-    if False:#opt.task != 0:
-      data = BrightfieldDeviceTrain((0.2, 0.2, 0.6), transform=Compose([
-        MinMax(),
-        Normalize(),
-        Affine(rotation_range=360),
-        Zoom((0.5, 1), fill_mode="constant"),
-        Translation((0.2, 0.2)),
-        # Affine(
-        #   rotation_range=360,
-        #   translation_range=(0.2, 0.2),
-        #   fill_mode="reflect"
-        # ),
-        Perturb(mean=(-0.1, 0.1), std=(0.0, 0.2)),
-        # Shift(shift=(0.1, 0.9), scale=(0.1, 0.9)),
-        # MinMax(),
-        Normalize()
-      ]))
-    else:
-      data = BrightfieldClass(transform=Compose([
-        Normalize(),
-        Rotation4(),
-        Zoom((0.5, 1.5), fill_mode="constant"),
-        Translation((0.2, 0.2)),
-        # Affine(
-        #   rotation_range=360,
-        #   translation_range=(0.2, 0.2),
-        #   fill_mode="reflect"
-        # ),
-        Perturb(std=0.5),
-        Shift(shift=(0.1, 0.9), scale=(0.1, 0.9)),
-        Normalize()
-      ]), data_mode=DataMode.TRAIN, bin_width=0.05)
+    data = BrightfieldShotFocus(transform=Compose([
+      Normalize(),
+      Rotation4(),
+      # Zoom((0.5, 1.5), fill_mode="constant"),
+      # Translation((0.2, 0.2)),
+      # Perturb(std=0.2),
+      # Shift(shift=(0.1, 0.9), scale=(0.1, 0.9)),
+      # Normalize()
+    ]), data_mode=DataMode.TRAIN)
     if opt.test:
       netread(net, net_name(opt) + f"-network-final.torch")
       net.eval()

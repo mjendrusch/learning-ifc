@@ -31,7 +31,7 @@ def random_split(data, seed=None, split=None):
   result = {}
   start = 0
   for piece in split:
-    offset = int(data.size(0) * split[piece])
+    offset = int(len(data) * split[piece])
     stop = start + offset
     result[piece] = data[start:stop]
     start += offset
