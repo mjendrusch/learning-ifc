@@ -16,7 +16,7 @@ from tensorboardX import SummaryWriter
 
 from torchsupport.data.io import netread, netwrite
 from torchsupport.data.transforms import Rotation4, Elastic, Compose, Shift, Zoom, Perturb, Normalize, MinMax, Center, Affine
-from torchsupport.training.clustering import ClusteringTraining, HierarchicalClusteringTraining, DEPICTTraining, ClusterAETraining
+# from torchsupport.training.clustering import ClusteringTraining, HierarchicalClusteringTraining, DEPICTTraining, ClusterAETraining
 from torchsupport.training.vae import JointVAETraining
 
 from learning_ifc.learning.models.compact import CompactAE, CompactAD, Compact, DenseCompact, Perceptron, MLP, Multitask, UnsupervisedEncoder, UnsupervisedDecoder, CompactEncoder, CompactDecoder
@@ -78,7 +78,7 @@ def train(net, opt, data):
     ctarget=opt.ctarget,
     dtarget=opt.dtarget,
     batch_size=64,
-    network_name=net_name(opt) + f"-VAE-joint-{opt.category}-{opt.continuous}",
+    network_name=net_name(opt) + f"-VAE-joint-{opt.category}-{opt.continuous}-{opt.gamma}-{opt.dtarget}-{opt.ctarget}",
     device="cuda:0",
     max_epochs=opt.epochs
   )
@@ -114,7 +114,7 @@ if __name__ == "__main__":
   print("Network created.")
   print("Loading data ...")
   data = BrightfieldDeviceImage(transform=Compose([
-    MinMax(),
+    Normalize(),
     Affine(
       rotation_range=360,
       zoom_range=(0.9, 1.1),
@@ -125,7 +125,7 @@ if __name__ == "__main__":
       fill_mode="constant",
       fill_value=0.5
     ),
-    Perturb(0.5, std=0.1),
+    Perturb(std=0.1),
     MinMax()
   ]))
   train(net, opt, data)
