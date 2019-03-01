@@ -519,8 +519,9 @@ class BrightfieldDeviceValid(Dataset):
     result = []
     labels = []
     for idx, name in enumerate(self.class_names):
-      result.append(self.base_data[name])
-      labels += [idx] * self.base_data[name].size(0)
+      indices = random.choices(range(len(self.base_data[name])), k=1000)
+      result.append(self.base_data[name][indices])
+      labels += [idx] * 1000
     result = torch.cat(result, dim=0)
     labels = torch.tensor(labels, dtype=torch.long)
     focus = torch.zeros(result.size(0), dtype=torch.long)
@@ -532,7 +533,7 @@ class BrightfieldDeviceValid(Dataset):
     return (self.transform(self.data[idx]), self.labels[idx], self.focus[idx])
 
   def __len__(self):
-    return len(self.data)
+    return 3000#len(self.data)
 
 class BrightfieldDeviceTrain(Dataset):
   def __init__(self, ratio, cells=100, transform=lambda x: x, seed=123456):
@@ -580,4 +581,4 @@ class BrightfieldDeviceImage(Dataset):
     return self.valid[idx][0], label
 
   def __len__(self):
-    return 2000
+    return len(self.valid)

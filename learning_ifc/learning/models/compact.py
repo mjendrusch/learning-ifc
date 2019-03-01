@@ -82,6 +82,51 @@ class Compact(nn.Module):
     out = func.adaptive_avg_pool2d(out, 1)
     return out
 
+class Metric(nn.Module):
+  def __init__(self):
+    super(Metric, self).__init__()
+    self.linear = nn.Linear(512, 1)
+
+  def forward(self, input, prototype):
+    # print(input.size())
+    # cat = torch.cat((input, prototype.expand(input.size(0), *prototype.size()[1:])), dim=1)
+    # return self.linear(cat.view(cat.size(0), -1))
+    return torch.norm((input - prototype), p=2, dim=1, keepdim=True)
+
+class Prototype(nn.Module):
+  def __init__(self, embedding, metric, way=3):
+    super(Prototype, self).__init__()
+    self.embedding = embedding
+    self.metric = metric
+    self.way = way
+
+  def forward(self, data, support, support_labels):
+    # print(support.size(), support_labels.size())
+    support_embedded = self.embedding(support)
+    # print("SE", support_embedded.size())
+    shot = support_embedded.size(0) // self.way
+    prototype = [
+      None
+      for label in range(self.way)
+    ]
+    for label in range(self.way):
+      index = int(support_labels.squeeze()[label * shot])
+      value = support_embedded[label*shot:(label+1)*shot].mean(dim=0, keepdim=True)
+      # print("VALUE", value.size())
+      prototype[index] = value
+    # print(prototype)
+    # print(support_labels.squeeze())
+    prototype = torch.cat(prototype, dim=0)
+    # print("PS", prototype[:, :2])
+    data_embedded = self.embedding(data)
+    distances = [
+      -self.metric(data_embedded, prototype[label:label+1])
+      for label in range(self.way)
+    ]
+    distances = torch.cat(distances, dim=1).squeeze()
+    # print("DS", distances.size())
+    return distances
+
 class Refocus(nn.Module):
   def __init__(self, depth, channels,
                filters=2, activation=func.relu):
@@ -173,7 +218,7 @@ class UnsupervisedDecoder(nn.Module):
 
   def forward(self, x, categorical=None):
     if categorical is not None:
-      print(categorical.size(), x.size())
+      # print(categorical.size(), x.size())
       cat_part = self.categorical(categorical.view(
         categorical.size(0), -1
       )).unsqueeze(2).unsqueeze(2)
@@ -282,3 +327,130 @@ class Siamese(nn.Module):
     # for idx in range(input.size(1) - 1):
       # task_result = self.task(torch.cat((values[:, idx:idx+1], values[:, -1:]), dim=1))
     return [self.task(torch.cat((left, right), dim=1))]
+
+class CompactEncoder(nn.Module):
+  def __init__(self, depth, in_channels, out_channels, category=None,
+               filters=2, activation=func.relu, batch_norm=True):
+    super(CompactEncoder, self).__init__()
+
+    self.category = category
+    self.activation = activation
+    self.preprocessor = nn.Conv2d(in_channels, 2 ** filters, 3, stride=2, padding=1)
+    self.bn_p = nn.BatchNorm2d(2 ** filters)
+    self.blocks = nn.ModuleList([
+      nn.Conv2d(2 ** (filters + idx), 2 ** (filters + idx + 1), 3, stride=2, padding=1)
+      for idx in range(depth)
+    ])
+    self.bn = nn.ModuleList([
+      nn.BatchNorm2d(2 ** (filters + idx + 1))
+      for idx in range(depth)
+    ])
+    self.mean = nn.Linear((128 // (2 ** (depth + 1))) ** 2 * 2 ** (filters + depth), out_channels)
+    self.std = nn.Linear((128 // (2 ** (depth + 1))) ** 2 * 2 ** (filters + depth), out_channels)
+    # if self.category is not None:
+    self.categorical = nn.Linear((128 // (2 ** (depth + 1))) ** 2 * 2 ** (filters + depth), self.category)
+
+  def forward(self, x):
+    out = self.activation(self.preprocessor(x))
+    for idx, module in enumerate(self.blocks):
+      bn = self.bn[idx]
+      out = bn(self.activation(module(out)))
+    out = out.reshape(out.size(0), -1)
+    mean = self.mean(out)
+    std = self.std(out)
+    # if self.category is not None:
+    logits = func.softmax(
+      self.categorical(out), dim=1
+    )
+    return out, mean, std, logits
+    # return out, mean, std
+
+class CompactDecoder(nn.Module):
+  def __init__(self, depth, in_channels, out_channels, category=None,
+               filters=2, activation=func.relu, batch_norm=True):
+    super(CompactDecoder, self).__init__()
+
+    self.category = category
+    if self.category is not None:
+      self.categorical = nn.Linear(category, out_channels)
+
+    self.activation = activation
+    self.preprocessor = nn.ConvTranspose2d(2 ** filters, in_channels, 3, stride=2, padding=1, output_padding=1)
+    self.bn_p = nn.BatchNorm2d(in_channels)
+    self.blocks = nn.ModuleList([
+      nn.ConvTranspose2d(2 ** (filters + idx + 1), 2 ** (filters + idx), 3, stride=2, padding=1, output_padding=1)
+      for idx in reversed(range(depth))
+    ])
+    self.bn = nn.ModuleList([
+      nn.BatchNorm2d(2 ** (filters + idx))
+      for idx in reversed(range(depth + 1))
+    ])
+    self.postprocessor = nn.Linear(out_channels + self.category, 4 * 2 ** (filters + depth))
+
+  def forward(self, x, categorical):
+    # print(categorical.size(), x.size())
+    out = self.activation(self.postprocessor(torch.cat((categorical, x), dim=1)))
+    out = out.reshape(out.size(0), out.size(1) // 4, 2, 2)
+    for idx, module in enumerate(self.blocks):
+      bn = self.bn[idx]
+      out = bn(out)
+      out = self.activation(module(out))
+    out = self.bn[-1](out)
+    out = self.preprocessor(out)
+    out = self.bn_p(out)
+    out = torch.clamp(torch.sigmoid(out), 0, 1)
+    return out
+
+class CompactAE(nn.Module):
+  def __init__(self, depth, in_channels, out_channels,
+               filters=2, activation=func.relu, batch_norm=True):
+    super(CompactAE, self).__init__()
+
+    self.activation = activation
+    self.preprocessor = nn.Conv2d(in_channels, 2 ** filters, 3, stride=2, padding=1)
+    self.bn_p = nn.BatchNorm2d(2 ** filters)
+    self.blocks = nn.ModuleList([
+      nn.Conv2d(2 ** (filters + idx), 2 ** (filters + idx + 1), 3, stride=2, padding=1)
+      for idx in range(depth)
+    ])
+    self.bn = nn.ModuleList([
+      nn.BatchNorm2d(2 ** (filters + idx + 1))
+      for idx in range(depth)
+    ])
+    self.postprocessor = nn.Conv2d(2 ** (filters + depth), out_channels, 1)
+
+  def forward(self, x):
+    out = self.activation(self.preprocessor(x))
+    for idx, module in enumerate(self.blocks):
+      bn = self.bn[idx]
+      out = bn(self.activation(module(out)))
+    return self.postprocessor(out)
+
+class CompactAD(nn.Module):
+  def __init__(self, depth, in_channels, out_channels,
+               filters=2, activation=func.relu, batch_norm=True):
+    super(CompactAD, self).__init__()
+
+    self.activation = activation
+    self.preprocessor = nn.ConvTranspose2d(2 ** filters, in_channels, 3, stride=2, padding=1, output_padding=1)
+    self.bn_p = nn.BatchNorm2d(in_channels)
+    self.blocks = nn.ModuleList([
+      nn.ConvTranspose2d(2 ** (filters + idx + 1), 2 ** (filters + idx), 3, stride=2, padding=1, output_padding=1)
+      for idx in reversed(range(depth))
+    ])
+    self.bn = nn.ModuleList([
+      nn.BatchNorm2d(2 ** (filters + idx))
+      for idx in reversed(range(depth + 1))
+    ])
+    self.postprocessor = nn.ConvTranspose2d(out_channels, 2 ** (filters + depth), 3, stride=1, padding=1)
+
+  def forward(self, x):
+    out = self.activation(self.postprocessor(x))
+    for idx, module in enumerate(self.blocks):
+      bn = self.bn[idx]
+      out = bn(out)
+      out = self.activation(module(out))
+    out = self.bn[-1](out)
+    out = self.preprocessor(out)
+    out = self.bn_p(out)
+    return out

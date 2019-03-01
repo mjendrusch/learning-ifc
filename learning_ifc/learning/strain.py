@@ -14,9 +14,9 @@ from tensorboardX import SummaryWriter
 
 from torchsupport.data.io import netread, netwrite
 from torchsupport.data.transforms import Rotation4, Elastic, Compose, Shift, Zoom, Perturb, PerturbUniform, MinMax, Normalize, Affine, Translation
-from torchsupport.training.training import SupervisedTraining
+from torchsupport.training.training import FewShotTraining
 
-from learning_ifc.learning.models.compact import Compact, DenseCompact, Perceptron, MLP, Multitask, Siamese
+from learning_ifc.learning.models.compact import Compact, DenseCompact, Perceptron, MLP, Multitask, Siamese, Prototype, Metric
 from learning_ifc.datasets.brightfield import Brightfield, BrightfieldClass, BrightfieldDevice, BrightfieldShotFocus, BrightfieldDeviceValid, DataMode
 
 from matplotlib import pyplot as plt
@@ -64,7 +64,9 @@ def create_network(opt):
   elif regressor_split[0] == "none":
     regressor = lambda x: x
 
-  result = Siamese(network, regressor)
+  network = Compact(5, 1, 256, filters=2, batch_norm=True)
+  distance = Metric()
+  result = Prototype(network, distance)
 
   return result
 
@@ -79,13 +81,20 @@ def show_images(training, inputs, labels):
   training.writer.add_image(f"valid image {label}", img, training.step_id)
   del img
 
+# def prototype_loss(distances, labels):
+#   loss = distances.sum(dim=1) + log((-distances).exp().sum(dim=1))
+
+
+#   loss = torch.mean(loss)
+#   return loss
+
 def train(net, opt, data):
   print("Start training ...")
   print("Loading data ...")
   if opt.task == 0:
     data.focus_only = True
-  valid_data = copy(data)
-  valid_data.data_mode = DataMode.VALID
+  valid_data = BrightfieldDeviceValid((0.2, 0.2, 0.2))
+  # data.data_mode = DataMode.TEST
   valid_data.transform = Normalize()#Compose([
   #   MinMax(),
   #   Normalize(),
@@ -118,12 +127,12 @@ def train(net, opt, data):
     ]
   print("Done setting up objectives.")
   print("Starting optimization ...")
-  training = SupervisedTraining(
+  training = FewShotTraining(
     net,
     data,
     valid_data,
     losses,
-    batch_size=64,
+    batch_size=16,
     network_name=net_name(opt),
     device="cuda:0",
     max_epochs=500,
@@ -174,7 +183,7 @@ def testdevice(net, cer=0.4, lud=0.3, pom=0.3):
     focus_c = np.zeros(41, dtype=np.int)
     for item, typ in data:
       typ_p, *_ = net(item.unsqueeze(0))
-      print(classes[int(typ_p.argmax())])#, (int(focus_p.argmax()) - 20) * 0.25)
+      # print(classes[int(typ_p.argmax())])#, (int(focus_p.argmax()) - 20) * 0.25)
       # focus_c[int(focus_p.argmax())] += 1
       typ_c[int(typ_p.argmax())] += 1
       plt.imshow(item[0].numpy()); plt.show()
@@ -194,14 +203,19 @@ if __name__ == "__main__":
     cer, lud, pom = map(float, opt.testdevice.split(":"))
     testdevice(net, cer=cer, lud=lud, pom=pom)
   else:
-    data = BrightfieldShotFocus(transform=Compose([
+    data = BrightfieldClass(transform=Compose([
       Normalize(),
-      Rotation4(),
-      # Zoom((0.5, 1.5), fill_mode="constant"),
-      # Translation((0.2, 0.2)),
-      # Perturb(std=0.2),
+      # Rotation4(),
+      Affine(
+        rotation_range=360,
+        fill_mode="reflect"
+      ),
+      # Rotation(360, fill_mod)
+      Zoom((0.5, 1.5), fill_mode="reflect"),
+      Translation((0.1, 0.1), fill_mode="reflect"),
+      Perturb(std=0.1),
       # Shift(shift=(0.1, 0.9), scale=(0.1, 0.9)),
-      # Normalize()
+      Normalize()
     ]), data_mode=DataMode.TRAIN)
     if opt.test:
       netread(net, net_name(opt) + f"-network-final.torch")

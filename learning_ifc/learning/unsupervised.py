@@ -16,16 +16,24 @@ from tensorboardX import SummaryWriter
 
 from torchsupport.data.io import netread, netwrite
 from torchsupport.data.transforms import Rotation4, Elastic, Compose, Shift, Zoom, Perturb, Normalize, MinMax, Center, Affine
-from torchsupport.training.clustering import ClusteringTraining, HierarchicalClusteringTraining, VAEClusteringTraining
+from torchsupport.training.clustering import ClusteringTraining, HierarchicalClusteringTraining, DEPICTTraining, ClusterAETraining
 from torchsupport.training.vae import JointVAETraining
 
-from learning_ifc.learning.models.compact import Compact, DenseCompact, Perceptron, MLP, Multitask, UnsupervisedEncoder, UnsupervisedDecoder
+from learning_ifc.learning.models.compact import CompactAE, CompactAD, Compact, DenseCompact, Perceptron, MLP, Multitask, UnsupervisedEncoder, UnsupervisedDecoder, CompactEncoder, CompactDecoder
 from learning_ifc.datasets.brightfield import BrightfieldDeviceImage, BrightfieldImage
 from matplotlib import pyplot as plt
 
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 def parse_args():
   parser = ArgumentParser(description="Unsupervisied classification training.")
-  parser.add_argument("--epochs", type=int, default=50)
+  parser.add_argument("--epochs", type=int, default=5000)
+  parser.add_argument("--category", type=int, default=10)
+  parser.add_argument("--continuous", type=int, default=64)
+  parser.add_argument("--gamma", type=float, default=1000.0)
+  parser.add_argument("--ctarget", type=float, default=50)
+  parser.add_argument("--dtarget", type=float, default=5)
   parser.add_argument("--net", type=str, default="compact:6:1:256:2")
   return parser.parse_args()
 
@@ -37,8 +45,11 @@ def create_network(opt):
     raise RuntimeError("Not implemented!")
 
   network = (
-    UnsupervisedEncoder(5, 1, 256, filters=4, category=3),
-    UnsupervisedDecoder(5, 1, 256, filters=4, category=3)
+    # Compact(5, 1, 256, filters=2)
+    # CompactAE(5, 1, 256, filters=4),
+    # CompactAD(5, 1, 256, filters=4)
+    CompactEncoder(5, 1, opt.continuous, filters=4, category=opt.category),
+    CompactDecoder(5, 1, opt.continuous, filters=4, category=opt.category)
   )
   return network
 
@@ -50,30 +61,45 @@ def train(net, opt, data):
   print("Setting up objectives ...")
   print("Done setting up objectives.")
   print("Starting optimization ...")
-  # training = HierarchicalClusteringTraining(
-  #   net,
+  # training = DEPICTTraining(
+  #   net[0], net[1], nn.Linear(256, 10),
   #   data,
-  #   depth=[5, 10, 30, 50],
-  #   # loss=ce,
-  #   network_name=net_name(opt),
+  #   clustering=KMeans(10),
+  #   batch_size=64,
+  #   loss=nn.CrossEntropyLoss(),
+  #   network_name=net_name(opt) + "-simple-clustering",
   #   device="cuda:0",
   #   max_epochs=500
   # )
   training = JointVAETraining(
     net[0], net[1],
     data,
+    gamma=opt.gamma,
+    ctarget=opt.ctarget,
+    dtarget=opt.dtarget,
     batch_size=64,
-    network_name=net_name(opt) + "-VAE-joint",
+    network_name=net_name(opt) + f"-VAE-joint-{opt.category}-{opt.continuous}",
     device="cuda:0",
-    max_epochs=500
+    max_epochs=opt.epochs
   )
-  # training = VAEClusteringTraining(
-  #   net[0], net[1],
+  # training = ClusteringTraining(
+  #   net,
   #   data,
-  #   depth=[3, 6],
+  #   clustering=KMeans(3),
+  #   # depth=[3, 4, 5, 6, 7, 8, 9, 10, 20, 50, 100],
   #   # loss=ce,
   #   batch_size=64,
-  #   network_name=net_name(opt) + "-VAE",
+  #   network_name=net_name(opt) + "-orderless-clustering-3",
+  #   device="cuda:0",
+  #   max_epochs=500
+  # )
+  # training = ClusterAETraining(
+  #   net[0], net[1],
+  #   data,
+  #   # depth=[3, 4, 5, 6, 7, 8, 9, 10, 20, 50, 100],
+  #   # loss=ce,
+  #   batch_size=64,
+  #   network_name=net_name(opt) + "-hardened-clustering",
   #   device="cuda:0",
   #   max_epochs=500
   # )
@@ -88,15 +114,19 @@ if __name__ == "__main__":
   print("Network created.")
   print("Loading data ...")
   data = BrightfieldDeviceImage(transform=Compose([
-    Normalize(),
-    Rotation4(),
-    # Affine(
-    #   rotation_range=360,
-    #   translation_range=(0.0, 0.0),
-    #   zoom_range=(0.9, 1.1),
-    #   fill_mode="reflect"
-    # ),
-    Perturb(std=0.05)
+    MinMax(),
+    Affine(
+      rotation_range=360,
+      zoom_range=(0.9, 1.1),
+      fill_mode="reflect"
+    ),
+    Affine(
+      translation_range=(0.5, 0.5),
+      fill_mode="constant",
+      fill_value=0.5
+    ),
+    Perturb(0.5, std=0.1),
+    MinMax()
   ]))
   train(net, opt, data)
   netwrite(net, net_name(opt) + f"-network-final.torch")
