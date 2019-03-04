@@ -17,7 +17,7 @@ from tensorboardX import SummaryWriter
 from torchsupport.data.io import netread, netwrite
 from torchsupport.data.transforms import Rotation4, Elastic, Compose, Shift, Zoom, Perturb, Normalize, MinMax, Center, Affine
 # from torchsupport.training.clustering import ClusteringTraining, HierarchicalClusteringTraining, DEPICTTraining, ClusterAETraining
-from torchsupport.training.vae import JointVAETraining
+from torchsupport.training.vae import JointVAETraining, FactorVAETraining
 
 from learning_ifc.learning.models.compact import CompactAE, CompactAD, Compact, DenseCompact, Perceptron, MLP, Multitask, UnsupervisedEncoder, UnsupervisedDecoder, CompactEncoder, CompactDecoder
 from learning_ifc.datasets.brightfield import BrightfieldDeviceImage, BrightfieldImage
@@ -48,8 +48,9 @@ def create_network(opt):
     # Compact(5, 1, 256, filters=2)
     # CompactAE(5, 1, 256, filters=4),
     # CompactAD(5, 1, 256, filters=4)
-    CompactEncoder(5, 1, opt.continuous, filters=4, category=opt.category),
-    CompactDecoder(5, 1, opt.continuous, filters=4, category=opt.category)
+    MLP(opt.continuous, 2, 2, hidden=64),
+    CompactEncoder(5, 1, opt.continuous, filters=4, category=None),#opt.category),
+    CompactDecoder(5, 1, opt.continuous, filters=4, category=None)#opt.category)
   )
   return network
 
@@ -71,13 +72,24 @@ def train(net, opt, data):
   #   device="cuda:0",
   #   max_epochs=500
   # )
-  training = JointVAETraining(
-    net[0], net[1],
+  # training = JointVAETraining(
+  #   net[0], net[1],
+  #   data,
+  #   gamma=opt.gamma,
+  #   ctarget=opt.ctarget,
+  #   dtarget=opt.dtarget,
+  #   batch_size=64,
+  #   network_name=net_name(opt) + f"-VAE-joint-{opt.category}-{opt.continuous}-{opt.gamma}-{opt.dtarget}-{opt.ctarget}",
+  #   device="cuda:0",
+  #   max_epochs=opt.epochs
+  # )
+  training = FactorVAETraining(
+    net[1], net[2], net[0],
     data,
     gamma=opt.gamma,
     ctarget=opt.ctarget,
     dtarget=opt.dtarget,
-    batch_size=64,
+    batch_size=128,
     network_name=net_name(opt) + f"-VAE-joint-{opt.category}-{opt.continuous}-{opt.gamma}-{opt.dtarget}-{opt.ctarget}",
     device="cuda:0",
     max_epochs=opt.epochs
@@ -120,11 +132,11 @@ if __name__ == "__main__":
       zoom_range=(0.9, 1.1),
       fill_mode="reflect"
     ),
-    Affine(
-      translation_range=(0.5, 0.5),
-      fill_mode="constant",
-      fill_value=0.5
-    ),
+    # Affine(
+    #   translation_range=(0.5, 0.5),
+    #   fill_mode="constant",
+    #   fill_value=0.5
+    # ),
     Perturb(std=0.1),
     MinMax()
   ]))
