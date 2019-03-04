@@ -275,11 +275,11 @@ class Perceptron(nn.Module):
     return self.final_activation(out)
 
 class MLP(nn.Module):
-  def __init__(self, filters, depth, classes, layers,
+  def __init__(self, out_channels, classes, layers,
                hidden=128, final_activation=lambda x: x):
     super(MLP, self).__init__()
     self.final_activation = final_activation
-    self.preprocessor = nn.Linear(2 ** (filters + depth), hidden)
+    self.preprocessor = nn.Linear(out_channels, hidden)
     self.linear = nn.ModuleList([
       nn.Linear(
         hidden,
@@ -292,7 +292,7 @@ class MLP(nn.Module):
   def forward(self, input):
     out = func.relu(self.preprocessor(input.squeeze()))
     for module in self.linear:
-      out = func.relu(module(out))
+      out = func.leaky_relu(module(out))
     out = self.final_activation(self.postprocessor(out))
     return out
 
@@ -347,8 +347,8 @@ class CompactEncoder(nn.Module):
     ])
     self.mean = nn.Linear((128 // (2 ** (depth + 1))) ** 2 * 2 ** (filters + depth), out_channels)
     self.std = nn.Linear((128 // (2 ** (depth + 1))) ** 2 * 2 ** (filters + depth), out_channels)
-    # if self.category is not None:
-    self.categorical = nn.Linear((128 // (2 ** (depth + 1))) ** 2 * 2 ** (filters + depth), self.category)
+    if self.category is not None:
+      self.categorical = nn.Linear((128 // (2 ** (depth + 1))) ** 2 * 2 ** (filters + depth), self.category)
 
   def forward(self, x):
     out = self.activation(self.preprocessor(x))
@@ -358,12 +358,12 @@ class CompactEncoder(nn.Module):
     out = out.reshape(out.size(0), -1)
     mean = self.mean(out)
     std = self.std(out)
-    # if self.category is not None:
-    logits = func.softmax(
-      self.categorical(out), dim=1
-    )
-    return out, mean, std, logits
-    # return out, mean, std
+    if self.category is not None:
+      logits = func.softmax(
+        self.categorical(out), dim=1
+      )
+      return out, mean, std, logits
+    return out, mean, std
 
 class CompactDecoder(nn.Module):
   def __init__(self, depth, in_channels, out_channels, category=None,
@@ -385,11 +385,17 @@ class CompactDecoder(nn.Module):
       nn.BatchNorm2d(2 ** (filters + idx))
       for idx in reversed(range(depth + 1))
     ])
-    self.postprocessor = nn.Linear(out_channels + self.category, 4 * 2 ** (filters + depth))
+    if self.category is not None:
+      self.postprocessor = nn.Linear(out_channels + self.category, 4 * 2 ** (filters + depth))
+    else:
+      self.postprocessor = nn.Linear(out_channels, 4 * 2 ** (filters + depth))
 
-  def forward(self, x, categorical):
+  def forward(self, x, categorical=None):
     # print(categorical.size(), x.size())
-    out = self.activation(self.postprocessor(torch.cat((categorical, x), dim=1)))
+    if self.category is not None:
+      out = self.activation(self.postprocessor(torch.cat((categorical, x), dim=1)))
+    else:
+      out = self.activation(self.postprocessor(x))
     out = out.reshape(out.size(0), out.size(1) // 4, 2, 2)
     for idx, module in enumerate(self.blocks):
       bn = self.bn[idx]
