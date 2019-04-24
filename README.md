@@ -6,7 +6,7 @@ fully unsupervised classification of single yeast cells in flow, as well as to
 predict the spatial distribution of those cells within a microfluidic device.
 
 ### Installation
-This package depends on [torchsupport](github.com/mjendrusch/torchsupport), a general
+This package depends on [torchsupport](https://github.com/mjendrusch/torchsupport), a general
 support library for machine learning in PyTorch, by the authors. To install this
 package, first install torchsupport and dependencies, then clone this repository,
 and install using `setup.py`.
