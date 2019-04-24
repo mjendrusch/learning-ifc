@@ -1,3 +1,5 @@
+"""Script to manually filter frames containing cell debris."""
+
 import os
 import numpy as np
 from PIL import Image, ImageSequence

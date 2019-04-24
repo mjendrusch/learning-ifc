@@ -3,30 +3,21 @@ yeast species from brightfield images."""
 from argparse import ArgumentParser
 from copy import copy
 
-from sklearn.cluster import KMeans, AgglomerativeClustering, AffinityPropagation
-
-import numpy as np
-
 import torch
-from torch.utils.data import DataLoader, Subset
-from torch import nn
-from torch import optim
-
-from tensorboardX import SummaryWriter
-
-from torchsupport.data.io import netread, netwrite
-from torchsupport.data.transforms import Rotation4, Elastic, Compose, Shift, Zoom, Perturb, Normalize, MinMax, Center, Affine
-# from torchsupport.training.clustering import ClusteringTraining, HierarchicalClusteringTraining, DEPICTTraining, ClusterAETraining
-from torchsupport.training.vae import JointVAETraining, FactorVAETraining
-
-from learning_ifc.learning.models.compact import CompactAE, CompactAD, Compact, DenseCompact, Perceptron, MLP, Multitask, UnsupervisedEncoder, UnsupervisedDecoder, CompactEncoder, CompactDecoder
-from learning_ifc.datasets.brightfield import BrightfieldDeviceImage, BrightfieldImage
-from matplotlib import pyplot as plt
-
+import torch.nn as nn
 import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy('file_system')
 
+from torchsupport.data.io import netwrite
+from torchsupport.data.transforms import Compose, Perturb, Normalize, MinMax, Affine
+from torchsupport.training.vae import FactorVAETraining
+
+from learning_ifc.learning.models.compact import MLP, CompactEncoder, CompactDecoder
+from learning_ifc.datasets.brightfield import BrightfieldDeviceImage
+
+
 def parse_args():
+  """Parses neural network training arguments."""
   parser = ArgumentParser(description="Unsupervisied classification training.")
   parser.add_argument("--epochs", type=int, default=5000)
   parser.add_argument("--category", type=int, default=10)
@@ -34,87 +25,48 @@ def parse_args():
   parser.add_argument("--gamma", type=float, default=1000.0)
   parser.add_argument("--ctarget", type=float, default=50)
   parser.add_argument("--dtarget", type=float, default=5)
-  parser.add_argument("--net", type=str, default="compact:6:1:256:2")
+  parser.add_argument("--net", type=str, default="factor")
   return parser.parse_args()
 
 def create_network(opt):
-  net_split = opt.net.split(":")
-  if net_split[0] == "compact":
-    network = Compact(*map(int, net_split[1:]))
-  else:
-    raise RuntimeError("Not implemented!")
+  """Creates a neural network according to the given options.
 
+  Args:
+    opt : options for neural network creation.
+  """
   network = (
-    # Compact(5, 1, 256, filters=2)
-    # CompactAE(5, 1, 256, filters=4),
-    # CompactAD(5, 1, 256, filters=4)
     MLP(opt.continuous, 2, 2, hidden=64),
-    CompactEncoder(5, 1, opt.continuous, filters=4, category=None),#opt.category),
-    CompactDecoder(5, 1, opt.continuous, filters=4, category=None)#opt.category)
+    CompactEncoder(5, 1, opt.continuous, filters=4, category=None),
+    CompactDecoder(5, 1, opt.continuous, filters=4, category=None)
   )
   return network
 
 def net_name(opt):
-  return f"{opt.net}"
+  """Generates a unique identifier for a given set of training options.
+
+  Args:
+    opt : neural network training options.
+  """
+  return f"{opt.net}" + \
+    f"-VAE-{opt.category}-{opt.continuous}-{opt.gamma}-{opt.dtarget}-{opt.ctarget}"
 
 def train(net, opt, data):
+  """Trains a given neural network according to the given options."""
   print("Start training ...")
   print("Setting up objectives ...")
   print("Done setting up objectives.")
   print("Starting optimization ...")
-  # training = DEPICTTraining(
-  #   net[0], net[1], nn.Linear(256, 10),
-  #   data,
-  #   clustering=KMeans(10),
-  #   batch_size=64,
-  #   loss=nn.CrossEntropyLoss(),
-  #   network_name=net_name(opt) + "-simple-clustering",
-  #   device="cuda:0",
-  #   max_epochs=500
-  # )
-  # training = JointVAETraining(
-  #   net[0], net[1],
-  #   data,
-  #   gamma=opt.gamma,
-  #   ctarget=opt.ctarget,
-  #   dtarget=opt.dtarget,
-  #   batch_size=64,
-  #   network_name=net_name(opt) + f"-VAE-joint-{opt.category}-{opt.continuous}-{opt.gamma}-{opt.dtarget}-{opt.ctarget}",
-  #   device="cuda:0",
-  #   max_epochs=opt.epochs
-  # )
   training = FactorVAETraining(
     net[1], net[2], net[0],
     data,
     gamma=opt.gamma,
     ctarget=opt.ctarget,
     dtarget=opt.dtarget,
-    batch_size=128,
-    network_name=net_name(opt) + f"-VAE-joint-{opt.category}-{opt.continuous}-{opt.gamma}-{opt.dtarget}-{opt.ctarget}",
+    batch_size=256,
+    network_name=net_name(opt),
     device="cuda:0",
     max_epochs=opt.epochs
   )
-  # training = ClusteringTraining(
-  #   net,
-  #   data,
-  #   clustering=KMeans(3),
-  #   # depth=[3, 4, 5, 6, 7, 8, 9, 10, 20, 50, 100],
-  #   # loss=ce,
-  #   batch_size=64,
-  #   network_name=net_name(opt) + "-orderless-clustering-3",
-  #   device="cuda:0",
-  #   max_epochs=500
-  # )
-  # training = ClusterAETraining(
-  #   net[0], net[1],
-  #   data,
-  #   # depth=[3, 4, 5, 6, 7, 8, 9, 10, 20, 50, 100],
-  #   # loss=ce,
-  #   batch_size=64,
-  #   network_name=net_name(opt) + "-hardened-clustering",
-  #   device="cuda:0",
-  #   max_epochs=500
-  # )
   return training.train()
 
 if __name__ == "__main__":
@@ -132,13 +84,10 @@ if __name__ == "__main__":
       zoom_range=(0.9, 1.1),
       fill_mode="reflect"
     ),
-    # Affine(
-    #   translation_range=(0.5, 0.5),
-    #   fill_mode="constant",
-    #   fill_value=0.5
-    # ),
     Perturb(std=0.1),
     MinMax()
   ]))
   train(net, opt, data)
-  netwrite(net, net_name(opt) + f"-network-final.torch")
+  netwrite(net[1], net_name(opt) + f"-encoder-final.torch")
+  netwrite(net[2], net_name(opt) + f"-decoder-final.torch")
+  netwrite(net[0], net_name(opt) + f"-discriminator-final.torch")

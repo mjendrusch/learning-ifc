@@ -5,3 +5,11 @@
 .vscode
 *.torch
 compact:*
+*.svg
+*.npy
+*.ipynb
+__pycache__
+Images
+.ipynb_checkpoints
+*.ipynb
+*.json

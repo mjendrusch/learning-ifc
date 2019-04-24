@@ -17,7 +17,7 @@ path = sys.argv[1]
 with ND2_Reader(path) as frames:
   frames.iter_axes = 'z'
   frames.bundle_axes = 'xy'
-  fr = frames[21] # maximally in-focus frame
+  fr = frames[0] # maximally out-of-focus frame
 
   yeasts_raw = [
     (slice(int(x), int(x) + 128), slice(int(y), int(y) + 128))

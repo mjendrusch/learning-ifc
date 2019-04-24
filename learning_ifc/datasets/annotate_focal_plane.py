@@ -1,3 +1,5 @@
+"""Script to annotate cell focal plane."""
+
 import os
 import numpy as np
 from PIL import Image, ImageSequence

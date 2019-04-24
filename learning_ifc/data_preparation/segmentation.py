@@ -1,3 +1,5 @@
+"""Implementation of MANA for yeast cell segmentation in bright field images."""
+
 import numpy as np
 import warnings
 warnings.simplefilter('ignore', np.RankWarning)
@@ -137,7 +139,7 @@ def _watershed(threshold):
       final_threshold[xb:xe, yb:ye] += region.image * idx
   return final_threshold, final_threshold_regions
 
-def MANA(image, large=5, small=0.25, smoothing=2, sep=False):
+def MANA(image, large=5, small=0.25, smoothing=2):
   """Computes object-regions using the MANA algorithm
     (doi:10.1186/s12938-018-0518-0).
 
@@ -156,8 +158,8 @@ def MANA(image, large=5, small=0.25, smoothing=2, sep=False):
   watershed_segmentation, watershed_regions = _watershed(final_threshold)
   return watershed_segmentation, watershed_regions
 
-def MANAObjects(image, large=5, small=0.25, smoothing=2, sep=False, size=(64,64)):
-  _, reg = MANA(image, large=large, small=small, smoothing=smoothing, sep=sep)
+def MANAObjects(image, large=5, small=0.25, smoothing=2, size=(64,64)):
+  _, reg = MANA(image, large=large, small=small, smoothing=smoothing)
   for region in reg:
     x, y = region.centroid
     xb, yb, xe, ye = (x - size[0] // 2, y - size[0] // 2, x + size[0] // 2, y + size[0] // 2)
@@ -165,20 +167,20 @@ def MANAObjects(image, large=5, small=0.25, smoothing=2, sep=False, size=(64,64)
       continue
     yield (x, y), image[int(xb):int(xe), int(yb):int(ye)]
 
-def _MANAArray_aux(image, x, y, large=5, small=0.25, smoothing=2, sep=False, size=(64,64), verbose=False):
+def _MANAArray_aux(image, x, y, large=5, small=0.25, smoothing=2, size=(64,64), verbose=False):
   positions = []
   image = image / (2 ** 16 - 1)
   image = image * (2 ** 8 - 1)
   if image.mean() / 255 > 0.8:
     return positions
-  for center, _ in MANAObjects(image, large=large, small=small, smoothing=smoothing, sep=sep, size=size):
+  for center, _ in MANAObjects(image, large=large, small=small, smoothing=smoothing, size=size):
     cx, cy = center
     cx += x
     cy += y
     positions.append((cx, cy))
   return positions
 
-def MANAArray(frame, large=5, small=0.25, smoothing=2, sep=False, size=(64,64), verbose=False, n_jobs=8):
+def MANAArray(frame, large=5, small=0.25, smoothing=2, size=(64,64), verbose=False, n_jobs=8):
   """Performs MANA object extraction patch-wise on a large numpy array.
 
   Args:
@@ -201,7 +203,7 @@ def MANAArray(frame, large=5, small=0.25, smoothing=2, sep=False, size=(64,64), 
         idy * (1000 - 2 * size[1]):idy * (1000 - 2 * size[1]) + 1000
       ],
       idx * (1000 - 2 * size[0]), idy * (1000 - 2 * size[1]),
-      large=large, small=small, smoothing=smoothing, sep=sep, size=size, verbose=verbose
+      large=large, small=small, smoothing=smoothing, size=size, verbose=verbose
     )
     for idx, idy in tqdm(step_iter, total=steps_x*steps_y)
   )

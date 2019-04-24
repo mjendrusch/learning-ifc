@@ -1,3 +1,5 @@
+"""Contains helpers for IFC frame processing."""
+
 import av
 import numpy as np
 from scipy.ndimage.filters import convolve
@@ -39,19 +41,3 @@ def crop_yeast(frame):
   stop = min(start + 128, frame.shape[1]) 
   crop = frame[:, start:stop]
   return crop
-
-def yeast_center(crop):
-  """Finds the center of a yeast cell.
-
-  Args:
-    crop (np.array): crop of a yeast cell.
-  """
-
-def yeast_focal_plane(crop, network):
-  """Finds the offset of a yeast cell from the current
-  focal plane.
-
-  Args:
-    crop (np.array): crop of a yeast cell.
-    network (nn.Module): neural network for focal plane estimation.
-  """

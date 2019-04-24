@@ -2,10 +2,9 @@ import os
 import json
 import random
 import numpy as np
-import pims
 from PIL import Image, ImageSequence
 import torch
-from torch.utils.data import Dataset, Subset
+from torch.utils.data import Dataset
 from learning_ifc.datasets.data_base import DataMode, random_split
 
 def _focus(data):
@@ -22,9 +21,8 @@ def _focus(data):
 
 class BrightfieldStacks(Dataset):
   """Dataset of brightfield yeast stacks for multiple strains at 41 consecutive z-positions
-    separated by 0.25 µm each, centered around the yeast focal plane.
+  separated by 0.25 µm each, centered around the yeast focal plane.
   """
-
   def __init__(self, transform=lambda x: x, data_mode=DataMode.VALID, split_seed=123456,
                use_hand_validated=False, use_hand_focused=False):
     """Dataset of brightfield yeast stacks for multiple strains at 41 consecutive z-positions
@@ -96,9 +94,7 @@ class BrightfieldStacks(Dataset):
             frames.append(frame_tensor)
         tensor = torch.cat(frames, dim=0).unsqueeze(0)
         am = tensor.view(tensor.size(1), -1).std(dim=1).argmin()
-        # if 1 <= am < 40:
         strain_result.append(tensor)
-      # strain_result = torch.cat(strain_result, dim=0)
       result.append(strain_result)
     minlen = min(map(len, result))
     for idx, elem in enumerate(result):
@@ -180,6 +176,11 @@ class BrightfieldStacks(Dataset):
     )
 
   def getfocus(self, idx):
+    """Retrieves the focal plane of a give data point.
+    
+    Args:
+      idx (int): index of data point in current split.
+    """
     if self.data_mode == DataMode.TRAIN:
       result = self.train_focus
     elif self.data_mode == DataMode.TEST:
@@ -262,67 +263,14 @@ class Brightfield(BrightfieldStacks):
       result = (data, focus)
     return result
 
-class BrightfieldRefocus(BrightfieldStacks):
-  def __init__(self, defocus=5, transform=lambda x: x):
-    super(BrightfieldRefocus, self).__init__(
-      transform=transform,
-      data_mode=DataMode.TRAIN
-    )
-    self.defocus = defocus
-
-  def __getitem__(self, idx):
-    starting_plane = random.choice(range(41 - self.defocus))
-    transformed = self.transform(self.train[idx])
-    return (
-      transformed[starting_plane].unsqueeze(0),
-      transformed[starting_plane + self.defocus].unsqueeze(0)
-    )
-
-class BrightfieldImage(Brightfield):
-  def __init__(self, transform=lambda x: x):
-    super(BrightfieldImage, self).__init__(
-      transform=transform,
-      data_mode=DataMode.TRAIN
-    )
-    self.labels = None
-
-  def __getitem__(self, idx):
-    if self.labels is not None:
-      label = self.labels[idx]
-    else:
-      label = 0
-    return self.transform(self.train[idx]), label
-
-class BrightfieldClass(Brightfield):
-  def __init__(self, transform=lambda x: x,
-               focus_transform=lambda x: x,
-               data_mode=DataMode.VALID,
-               split_seed=123456, bin_width=0.5):
-    super(BrightfieldClass, self).__init__(
-      transform=transform,
-      focus_transform=focus_transform,
-      data_mode=data_mode,
-      split_seed=split_seed
-    )
-    self.bin_width = bin_width
-    binned = ((self.train_focus + 1) / self.bin_width)
-    bins = [0 for _ in range(int(2 / self.bin_width + 1))]
-    for focus in self.train_focus:
-      ff = int((focus - 1e-6 + 1) / (self.bin_width - 1e-6))
-      bins[ff] += 1
-    # self.focus_weights = torch.histc(binned, bins=int(2 / self.bin_width + 1), min=0, max=(1 / self.bin_width + 1))
-    # self.focus_weights = self.focus_weights.sum(dim=0, keepdim=True) / self.focus_weights
-    print(bins)
-    self.focus_weights = torch.Tensor([1 / val for val in bins])
-
-  def __getitem__(self, idx):
-    *other, focus = super(BrightfieldClass, self).__getitem__(idx)
-    focus = int((focus - 1e-6 + 1) / (self.bin_width - 1e-6))
-    return (*other, focus)
-
 class BrightfieldFocusDistance(BrightfieldStacks):
+  """Dataset containing pairs of single-cell crops at different z-positions.
+  This Dataset was used for training Siamese neural networks for z-distance
+  regression.
+  """
   def __init__(self, data_mode=DataMode.VALID,
                split_seed=123456, transform=lambda x: x):
+    """Dataset containing pairs of single-cell crops at different z-positions."""
     super(BrightfieldFocusDistance, self).__init__(
       transform=lambda x: x,
       data_mode=data_mode,
@@ -340,152 +288,28 @@ class BrightfieldFocusDistance(BrightfieldStacks):
       self.independent_transform(data[first].unsqueeze(0)),
       self.independent_transform(data[second].unsqueeze(0))
     ), dim=0), torch.tensor([difference], dtype=torch.float)
-  
+
   def __len__(self):
     return 41 ** 2 * super(BrightfieldFocusDistance, self).__len__()
 
-class BrightfieldShot(Brightfield):
-  def __init__(self, data_mode=DataMode.VALID, n_shot=1,
-               split_seed=123456, transform=lambda x: x):
-    super(BrightfieldShot, self).__init__(
-      transform=lambda x: x,
-      data_mode=data_mode,
-      split_seed=split_seed
-    )
-    self.n_shot = n_shot
-    self.independent_transform = transform
-
-  def __getitem__(self, raw_idx):
-    idx = raw_idx % super(BrightfieldShot, self).__len__()
-    data, label, *_ = super(BrightfieldShot, self).__getitem__(idx)
-    data_p, label_p, *_ = super(BrightfieldShot, self).__getitem__(
-      random.choice(range(super(BrightfieldShot, self).__len__()))
-    )
-    return torch.cat((
-      self.independent_transform(data),
-      self.independent_transform(data_p)
-    ), dim=0), int(label == label_p)
-
-class BrightfieldShotFocus(BrightfieldStacks):
-  def __init__(self, data_mode=DataMode.VALID, n_shot=1,
-               split_seed=123456, transform=lambda x: x):
-    super(BrightfieldShotFocus, self).__init__(
-      transform=lambda x: x,
-      data_mode=data_mode,
-      split_seed=split_seed
-    )
-    self.n_shot = n_shot
-    self.independent_transform = transform
-
-  def __getitem__(self, raw_idx):
-    idx = raw_idx % super(BrightfieldShotFocus, self).__len__()
-    data, label, *_ = super(BrightfieldShotFocus, self).__getitem__(idx)
-    data_p, label_p, *_ = super(BrightfieldShotFocus, self).__getitem__(
-      random.choice(range(super(BrightfieldShotFocus, self).__len__()))
-    )
-    return torch.cat((
-      self.independent_transform(data[21].unsqueeze(0)),
-      self.independent_transform(data_p[21].unsqueeze(0))
-    ), dim=0), int(label == label_p)
-
-class BrightfieldDevice(Dataset):
-  def __init__(self, ratio, cells=100, transform=lambda x: x, seed=123456):
-    """Dataset simulating a single run of imaging flow cytometry by remixing
-    yeast frames from real imaging flow cytometry runs.
-
-    Args:
-      ratio (tuple): percentages of each yeast strain in the IFC sequence.
-      cells (int): number of frames containing cells in the IFC sequence.
-      transform (callable): transforms to apply to datapoints.
-      seed (int): seed to use for random IFC run remixing.
-    """
-    super(BrightfieldDevice, self).__init__()
-    self.transform = transform
-    self.ratio = ratio
-    self.cells = cells
-    self.seed = seed
-    self.base_data = ...
-    self.data = ...
-    self.labels = ...
-    self._load_data()
-    self._sample_run()
-
-  def _load_data(self):
-    path = os.path.dirname(os.path.realpath(__file__))
-    path = "/".join(path.split("/")[:-1]) + "/runs/brightfield/"
-    strain_result = {
-      "cerevisiae": [],
-      "ludwigii": [],
-      "pombe": []
-    }
-    for root, _, files in os.walk(path):
-      for filename in files:
-        species = filename.split("_")[0]
-        frames = []
-        with Image.open(f"{root}/{filename}") as stack:
-          for frame in ImageSequence.Iterator(stack):
-            frame = np.array(frame)
-            if frame.shape == (150, 128):
-              frame = frame[11:139, :]
-            if frame.shape == (128, 128):
-              frames.append(torch.Tensor(frame).unsqueeze(0).unsqueeze(0))
-        tensor = torch.cat(frames, dim=0)
-        strain_result[species].append(tensor)
-    print(strain_result)
-    for name in strain_result:
-      print(name)
-      print(*map(lambda x: x.size(), strain_result[name]))
-      strain_result[name] = torch.cat(strain_result[name], dim=0)
-    self.base_data = strain_result
-
-  def _sample_run(self):
-    result = []
-    labels = []
-    for idx, name in enumerate(self.base_data):
-      split_ratio = self.ratio[idx] * self.cells / len(self.base_data[name])
-      take = random_split(
-        self.base_data[name],
-        seed=idx * self.seed,
-        split={
-          "accept": split_ratio,
-          "reject": 1 - split_ratio
-        }
-      )["accept"]
-      result.append(take)
-      labels += [idx] * take.size(0)
-    result = torch.cat(result, dim=0)
-    labels = torch.tensor(labels, dtype=torch.long).unsqueeze(1).unsqueeze(2)
-    self.data = result
-    self.labels = labels
-
-  def __getitem__(self, idx):
-    return self.transform(self.data[idx]), self.labels[idx]
-
-  def __len__(self):
-    return self.cells
-
 class BrightfieldDeviceValid(Dataset):
-  def __init__(self, ratio, cells=100, transform=lambda x: x, seed=123456):
-    """Dataset simulating a single run of imaging flow cytometry by remixing
-    yeast frames from real imaging flow cytometry runs.
+  """Dataset containing raw cell data from flow cytometry runs."""
+  def __init__(self, fixed=False, transform=lambda x: x, seed=123456):
+    """Dataset containing cells from flow cytometry runs.
 
     Args:
-      ratio (tuple): percentages of each yeast strain in the IFC sequence.
-      cells (int): number of frames containing cells in the IFC sequence.
       transform (callable): transforms to apply to datapoints.
       seed (int): seed to use for random IFC run remixing.
     """
     super(BrightfieldDeviceValid, self).__init__()
     self.transform = transform
-    self.ratio = ratio
-    self.cells = cells
     self.seed = seed
     self.class_names = ("cerevisiae", "ludwigii", "pombe")
     self.base_data = ...
     self.data = ...
     self.labels = ...
     self._load_data()
-    self._sample_run()
+    self._sample_run(fixed)
 
   def _load_data(self):
     path = os.path.dirname(os.path.realpath(__file__))
@@ -508,20 +332,22 @@ class BrightfieldDeviceValid(Dataset):
               frames.append(torch.Tensor(frame.astype(float)).unsqueeze(0).unsqueeze(0))
         tensor = torch.cat(frames, dim=0)
         strain_result[species].append(tensor)
-    print(strain_result)
     for name in strain_result:
-      print(name)
-      print(*map(lambda x: x.size(), strain_result[name]))
       strain_result[name] = torch.cat(strain_result[name], dim=0)
     self.base_data = strain_result
 
-  def _sample_run(self):
+  def _sample_run(self, fixed):
     result = []
     labels = []
-    for idx, name in enumerate(self.class_names):
-      indices = random.choices(range(len(self.base_data[name])), k=1000)
-      result.append(self.base_data[name][indices])
-      labels += [idx] * 1000
+    if fixed:
+      for idx, name in enumerate(self.class_names):
+        result.append(self.base_data[name])
+        labels += [idx] * len(result[-1])
+    else:
+      for idx, name in enumerate(self.class_names):
+        indices = random.choices(range(len(self.base_data[name])), k=1000)
+        result.append(self.base_data[name][indices])
+        labels += [idx] * 1000
     result = torch.cat(result, dim=0)
     labels = torch.tensor(labels, dtype=torch.long)
     focus = torch.zeros(result.size(0), dtype=torch.long)
@@ -533,44 +359,20 @@ class BrightfieldDeviceValid(Dataset):
     return (self.transform(self.data[idx]), self.labels[idx], self.focus[idx])
 
   def __len__(self):
-    return 3000#len(self.data)
-
-class BrightfieldDeviceTrain(Dataset):
-  def __init__(self, ratio, cells=100, transform=lambda x: x, seed=123456):
-    """Dataset simulating a single run of imaging flow cytometry by remixing
-    yeast frames from real imaging flow cytometry runs.
-
-    Args:
-      ratio (tuple): percentages of each yeast strain in the IFC sequence.
-      cells (int): number of frames containing cells in the IFC sequence.
-      transform (callable): transforms to apply to datapoints.
-      seed (int): seed to use for random IFC run remixing.
-    """
-    super(BrightfieldDeviceTrain, self).__init__()
-    self.valid = BrightfieldDeviceValid(ratio, cells=cells, transform=transform, seed=seed)
-    self.subset = Subset(self.valid, list(range(100)) + list(range(800, 900)) + list(range(1200, 1300)))
-
-  def __getitem__(self, idx_raw):
-    idx = idx_raw % len(self.subset)
-    return self.subset[idx]
-
-  def __len__(self):
-    return 20000
+    return len(self.data)
 
 class BrightfieldDeviceImage(Dataset):
+  """Dataset containing cell images from flow cytometry runs."""
   def __init__(self, transform=lambda x: x, seed=123456):
-    """Dataset simulating a single run of imaging flow cytometry by remixing
-    yeast frames from real imaging flow cytometry runs.
+    """Dataset containing cells from flow cytometry runs.
 
     Args:
-      ratio (tuple): percentages of each yeast strain in the IFC sequence.
-      cells (int): number of frames containing cells in the IFC sequence.
       transform (callable): transforms to apply to datapoints.
       seed (int): seed to use for random IFC run remixing.
     """
     super(BrightfieldDeviceImage, self).__init__()
     self.labels = None
-    self.valid = BrightfieldDeviceValid((0.2, 0.2, 0.6), cells=100, transform=transform, seed=seed)
+    self.valid = BrightfieldDeviceValid(transform=transform, seed=seed)
 
   def __getitem__(self, idx_raw):
     idx = idx_raw % len(self.valid)
