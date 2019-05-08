@@ -8,5 +8,5 @@ predict the spatial distribution of those cells within a microfluidic device.
 ### Installation
 This package depends on [torchsupport](https://github.com/mjendrusch/torchsupport), a general
 support library for machine learning in PyTorch, by the authors. To install this
-package, first install torchsupport and dependencies, then clone this repository,
+package, first install torchsupport version 0.0.1 and dependencies, then clone this repository,
 and install using `setup.py`.
