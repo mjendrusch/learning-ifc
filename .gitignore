@@ -13,3 +13,4 @@ Images
 .ipynb_checkpoints
 *.ipynb
 *.json
+XDG_CACHE_HOME

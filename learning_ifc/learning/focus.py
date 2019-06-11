@@ -61,14 +61,15 @@ def net_name(opt):
   """
   return f"{opt.net}-{opt.classifier}-{opt.regressor}-{opt.task}"
 
-def show_images(training, inputs, labels):
+def show_images(training, inputs, outputs):
   """Callback to display validation images during training.
   
   Args:
     training (Training): neural network training algorithm.
     inputs (torch.Tensor): batch inputs.
-    labels (torch.Tensor): batch labels.
+    outputs (torch.Tensor): batch processed data.
   """
+  inputs, labels = inputs
   img = inputs[0]
   img = img - img.min()
   img = img / img.max()
